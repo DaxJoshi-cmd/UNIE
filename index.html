@@ -1,0 +1,468 @@
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>UniQuiz | Cloud Sync Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Nunito', 'sans-serif'] },
+            colors: { 
+                brand: { dark: '#1e1b4b', main: '#4338ca', light: '#818cf8', accent: '#fbbf24' },
+                kahoot: { purple: '#46178f', blue: '#1368ce', green: '#26890c', red: '#e21b3c', yellow: '#ffa602' }
+            },
+            animation: {
+                'fade-in': 'fadeIn 0.3s ease-out',
+                'pulse-fast': 'pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            },
+            keyframes: {
+                fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } }
+            },
+            boxShadow: {
+                'arcade': '0 4px 0 rgba(0,0,0,0.2)',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      .btn-push { transition: all 0.1s; transform: translateY(0); box-shadow: 0 4px 0 rgba(0,0,0,0.2); }
+      .btn-push:active { transform: translateY(4px); box-shadow: none !important; }
+      .glass-panel { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+      @keyframes bounce-sm { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+      .animate-bounce-sm { animation: bounce-sm 2s infinite; }
+    </style>
+  </head>
+  <body class="bg-gray-100 font-sans text-gray-800 min-h-screen pb-10 overflow-x-hidden">
+
+    <div id="auth-screen" class="fixed inset-0 z-50 flex items-center justify-center bg-brand-dark bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+        <div class="glass-panel p-10 rounded-3xl shadow-2xl w-full max-w-md animate-fade-in border-t-8 border-brand-main relative">
+            <div class="text-center mb-8">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-brand-main text-white text-3xl font-black rounded-2xl mb-4 shadow-lg">U</div>
+                <h1 class="text-3xl font-black text-gray-800">UniQuiz</h1>
+                <p class="text-gray-500 font-bold text-sm">Centralized Faculty Access</p>
+            </div>
+
+            <form onsubmit="event.preventDefault(); attemptLogin();" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Username</label>
+                    <input type="text" id="login-user" class="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-3 font-bold focus:border-brand-main outline-none transition" placeholder="Enter ID">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase text-gray-400 mb-1">Password</label>
+                    <input type="password" id="login-pass" class="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-3 font-bold focus:border-brand-main outline-none transition" placeholder="••••••••">
+                </div>
+                <div id="login-error" class="text-red-500 text-xs font-bold hidden text-center">Invalid Credentials</div>
+                <div id="db-status" class="text-gray-400 text-xs font-bold text-center animate-pulse">Connecting to Cloud Database...</div>
+                
+                <button type="submit" class="w-full bg-brand-main text-white py-4 rounded-xl font-black text-lg btn-push hover:bg-indigo-700 mt-4">SECURE LOGIN</button>
+            </form>
+            
+            <div class="mt-8 pt-6 border-t border-gray-100 text-center">
+                <p class="text-xs text-gray-400 font-bold mb-2">Student Access</p>
+                <button onclick="toggleStudentJoin()" class="w-full bg-white border-2 border-brand-main text-brand-main py-3 rounded-xl font-black btn-push hover:bg-indigo-50">
+                    🎮 Join Game with PIN
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="student-join-screen" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-indigo-900 bg-opacity-95 backdrop-blur-sm">
+        <div class="bg-white p-8 rounded-3xl w-full max-w-md text-center shadow-2xl animate-fade-in border-4 border-indigo-500">
+            <div id="join-step-1">
+                <h2 class="text-3xl font-black mb-2 text-gray-800">Join Session</h2>
+                <p class="text-gray-400 font-bold text-sm mb-6">Enter the code on the projector</p>
+                <input type="text" id="player-name-input" placeholder="Your Nickname" class="w-full text-center text-lg font-bold bg-gray-50 border-2 border-gray-200 rounded-xl py-3 mb-3 focus:border-indigo-500 outline-none">
+                <input type="text" id="game-pin-input" placeholder="GAME PIN" class="w-full text-center text-3xl font-black tracking-widest bg-gray-100 border-2 border-gray-200 rounded-xl py-4 mb-6 uppercase focus:border-indigo-500 outline-none placeholder-gray-300">
+                <div class="flex gap-2">
+                    <button onclick="toggleStudentJoin()" class="flex-1 bg-gray-200 text-gray-600 py-3 rounded-xl font-bold hover:bg-gray-300">Cancel</button>
+                    <button onclick="goToAvatarSelection()" class="flex-1 bg-brand-main text-white py-3 rounded-xl font-black btn-push shadow-[0_4px_0_rgb(55,48,163)]">NEXT</button>
+                </div>
+            </div>
+            <div id="join-step-2" class="hidden">
+                <h2 class="text-2xl font-black mb-4 text-gray-800">Pick Avatar</h2>
+                <div class="grid grid-cols-4 gap-2 mb-6" id="avatar-grid"></div>
+                <div class="flex gap-2">
+                    <button onclick="document.getElementById('join-step-2').classList.add('hidden'); document.getElementById('join-step-1').classList.remove('hidden');" class="flex-1 text-gray-400 font-bold">Back</button>
+                    <button onclick="joinGame()" class="flex-1 bg-green-500 text-white py-3 rounded-xl font-black btn-push shadow-[0_4px_0_#15803d]">JOIN!</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="player-waiting-screen" class="hidden fixed inset-0 z-[65] bg-purple-600 flex flex-col items-center justify-center text-white p-6 text-center">
+        <div class="w-32 h-32 bg-purple-500 rounded-full flex items-center justify-center text-6xl mb-8 border-4 border-purple-400 animate-bounce-sm" id="waiting-avatar-display">😎</div>
+        <h2 class="text-4xl font-black mb-3">You're In!</h2>
+        <p class="text-purple-200 font-bold text-xl">Look at the big screen.</p>
+        <div class="mt-8 bg-black/20 px-6 py-2 rounded-lg font-mono" id="player-wait-pin">...</div>
+    </div>
+
+    <div id="app-layout" class="hidden flex min-h-screen w-full">
+        <aside class="w-64 bg-white border-r border-gray-200 flex flex-col z-20 shadow-lg hidden md:flex h-screen sticky top-0">
+            <div class="p-6 flex items-center gap-3 border-b border-gray-100">
+                <div class="w-10 h-10 bg-brand-main rounded-xl flex items-center justify-center text-white font-black text-xl">U</div>
+                <div class="leading-tight">
+                    <span class="font-black text-xl text-gray-800 block">UniQuiz</span>
+                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Cloud Connected</span>
+                </div>
+            </div>
+            <div class="p-4 bg-gray-50 border-b border-gray-100">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold" id="user-avatar">AD</div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-black text-gray-800 truncate" id="user-name-display">Admin</p>
+                        <p class="text-xs text-green-600 font-bold uppercase" id="user-role-display">Developer</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto py-6 px-3 space-y-2">
+                <button onclick="nav('library')" id="nav-library" class="sidebar-link w-full flex items-center gap-4 px-4 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition active bg-indigo-50 text-brand-main"><span>📚</span> Course Library</button>
+                <button onclick="nav('reports')" id="nav-reports" class="sidebar-link w-full flex items-center gap-4 px-4 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition"><span>📊</span> Grade Reports</button>
+                <div id="admin-menu" class="hidden pt-6 mt-6 border-t border-gray-200">
+                    <p class="px-4 text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Developer Zone</p>
+                    <button onclick="nav('users')" id="nav-users" class="sidebar-link w-full flex items-center gap-4 px-4 py-3 rounded-xl font-bold text-gray-500 hover:bg-gray-50 transition"><span>👥</span> Manage Faculty</button>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-100">
+                <button onclick="logout()" class="w-full text-left px-4 py-2 text-red-500 font-bold text-sm hover:bg-red-50 rounded-lg transition">Log Out</button>
+            </div>
+        </aside>
+
+        <main class="flex-1 bg-gray-100 h-full">
+            <div class="p-8 max-w-6xl mx-auto">
+                <div id="view-library" class="animate-fade-in">
+                    <header class="flex justify-between items-center mb-8">
+                        <div><h2 class="text-3xl font-black text-gray-800">My Library</h2><p class="text-gray-500 font-bold text-sm">Select a quiz to host live.</p></div>
+                        <button onclick="document.getElementById('create-modal').classList.remove('hidden')" class="bg-brand-main text-white px-6 py-3 rounded-xl font-bold text-sm btn-push hover:bg-indigo-700 shadow-[0_4px_0_rgb(55,48,163)]">+ Create Quiz</button>
+                    </header>
+                    <div id="quiz-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+                </div>
+
+                <div id="view-reports" class="hidden animate-fade-in">
+                    <h2 class="text-3xl font-black text-gray-800 mb-8">Performance Reports</h2>
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                        <table class="w-full text-left"><thead class="bg-gray-50 border-b border-gray-200"><tr><th class="p-4 text-xs font-black text-gray-400 uppercase">Date</th><th class="p-4 text-xs font-black text-gray-400 uppercase">Quiz</th><th class="p-4 text-xs font-black text-gray-400 uppercase">Participants</th></tr></thead><tbody><tr class="border-b border-gray-100"><td class="p-4 font-bold text-gray-500">Dec 05</td><td class="p-4 font-bold">Physics Mid-Term</td><td class="p-4 font-bold text-green-600">34 Students</td></tr></tbody></table>
+                    </div>
+                </div>
+
+                <div id="view-users" class="hidden animate-fade-in">
+                    <header class="mb-8">
+                        <h2 class="text-3xl font-black text-gray-800">Faculty Management</h2>
+                        <p class="text-gray-500 font-bold text-sm flex items-center gap-2">
+                            <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                            Synced with Firebase Cloud
+                        </p>
+                    </header>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 h-fit">
+                            <h3 class="font-black text-lg mb-4 text-indigo-900">Add Cloud User</h3>
+                            <div class="space-y-4">
+                                <input id="new-name" placeholder="Full Name" class="w-full bg-gray-50 border-2 border-gray-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-brand-main">
+                                <input id="new-user" placeholder="Username" class="w-full bg-gray-50 border-2 border-gray-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-brand-main">
+                                <input id="new-pass" placeholder="Password" class="w-full bg-gray-50 border-2 border-gray-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-brand-main">
+                                <select id="new-role" class="w-full bg-gray-50 border-2 border-gray-200 p-3 rounded-xl font-bold text-sm outline-none focus:border-brand-main text-gray-600">
+                                    <option value="faculty">Professor (Standard)</option>
+                                    <option value="admin">Developer (Admin)</option>
+                                </select>
+                                <button onclick="addCloudUser()" class="w-full bg-green-500 text-white py-3 rounded-xl font-black btn-push shadow-[0_4px_0_#15803d]">Create User</button>
+                            </div>
+                        </div>
+
+                        <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-50 border-b border-gray-200">
+                                    <tr>
+                                        <th class="p-4 text-xs font-black text-gray-400 uppercase">Name</th>
+                                        <th class="p-4 text-xs font-black text-gray-400 uppercase">Username</th>
+                                        <th class="p-4 text-xs font-black text-gray-400 uppercase">Role</th>
+                                        <th class="p-4 text-xs font-black text-gray-400 uppercase">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="user-list-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <div id="host-lobby-screen" class="hidden fixed inset-0 z-[70] bg-indigo-900 flex flex-col text-white bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]">
+        <div class="p-8 flex justify-between items-start">
+            <div class="bg-indigo-800/50 p-6 rounded-3xl backdrop-blur-sm border border-indigo-700">
+                <div class="text-indigo-300 font-black uppercase tracking-widest text-sm mb-2">Student Join PIN</div>
+                <div class="flex items-center gap-4"><div id="lobby-pin-display" class="text-7xl font-black tracking-widest text-white font-mono">------</div></div>
+            </div>
+            <div class="text-center bg-indigo-800/50 px-8 py-4 rounded-2xl backdrop-blur-sm border border-indigo-700"><div class="text-6xl font-black mb-1" id="lobby-count">0</div><div class="text-sm font-bold uppercase text-indigo-300 tracking-wider">Players</div></div>
+        </div>
+        <div class="flex-1 overflow-y-auto p-12"><h3 class="text-center text-indigo-300 font-bold uppercase tracking-widest mb-8 opacity-50">Waiting for players to join...</h3><div id="lobby-player-grid" class="flex flex-wrap gap-6 justify-center"></div></div>
+        <div class="p-8 bg-indigo-950 flex justify-between items-center shadow-2xl border-t border-indigo-800">
+            <button onclick="document.getElementById('host-lobby-screen').classList.add('hidden'); document.getElementById('app-layout').classList.remove('hidden');" class="text-indigo-400 font-bold hover:text-white transition">Cancel Game</button>
+            <button onclick="startGame()" class="bg-white text-indigo-900 px-16 py-4 rounded-2xl font-black text-2xl shadow-[0_6px_0_#c7d2fe] btn-push hover:bg-indigo-50">START GAME</button>
+        </div>
+    </div>
+    <div id="game-screen" class="hidden fixed inset-0 z-[80] bg-gray-100 flex flex-col">
+        <div class="bg-white p-6 shadow-md flex justify-between items-center z-10 border-b-4 border-gray-200"><div class="font-black text-gray-400 uppercase tracking-widest text-sm">Question 1</div><div class="w-12 h-12 rounded-full bg-purple-600 text-white flex items-center justify-center font-black text-xl shadow-lg" id="game-timer">30</div></div>
+        <div class="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            <h1 class="text-2xl md:text-5xl font-black text-gray-800 mb-12 max-w-5xl leading-tight" id="question-text">Which is the largest planet?</h1>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 w-full max-w-5xl h-96">
+                <button onclick="submitAnswer(0)" class="bg-kahoot-red text-white rounded-2xl shadow-[0_6px_0_#9f122a] btn-push flex items-center p-8 text-2xl font-bold h-full">Jupiter</button>
+                <button onclick="submitAnswer(1)" class="bg-kahoot-blue text-white rounded-2xl shadow-[0_6px_0_#0d4991] btn-push flex items-center p-8 text-2xl font-bold h-full">Mars</button>
+                <button onclick="submitAnswer(2)" class="bg-kahoot-yellow text-white rounded-2xl shadow-[0_6px_0_#976f00] btn-push flex items-center p-8 text-2xl font-bold h-full">Earth</button>
+                <button onclick="submitAnswer(3)" class="bg-kahoot-green text-white rounded-2xl shadow-[0_6px_0_#1a6008] btn-push flex items-center p-8 text-2xl font-bold h-full">Venus</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="create-modal" class="hidden fixed inset-0 z-[90] flex items-center justify-center bg-gray-900 bg-opacity-90 backdrop-blur-sm">
+        <div class="bg-white rounded-3xl w-full max-w-lg animate-fade-in shadow-2xl p-8">
+            <h2 class="text-3xl font-black text-gray-800 mb-2">Create New Quiz</h2>
+            <input type="text" id="new-set-title" placeholder="Quiz Title" class="w-full bg-gray-100 border-2 border-gray-200 rounded-2xl px-6 py-4 font-bold text-xl mb-6 focus:border-brand-main outline-none">
+            <div class="flex justify-end gap-4"><button onclick="document.getElementById('create-modal').classList.add('hidden')" class="text-gray-500 font-bold px-6 py-3 hover:bg-gray-100 rounded-xl transition">Cancel</button><button onclick="saveNewSet()" class="bg-brand-main text-white font-black px-8 py-3 rounded-xl btn-push shadow-[0_4px_0_rgb(55,48,163)]">CREATE</button></div>
+        </div>
+    </div>
+
+  <script type="module">
+/* =========================================================
+   FIREBASE IMPORTS
+========================================================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import {
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signInAnonymously
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import {
+  getFirestore,
+  collection,
+  doc,
+  setDoc,
+  getDoc,
+  addDoc,
+  onSnapshot,
+  updateDoc,
+  increment
+} from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+/* =========================================================
+   FIREBASE INIT
+========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyD7HZMkzjcHmIqV7m4r6a_2T8dfmGzVm54",
+  authDomain: "uniquiz-d3ddb.firebaseapp.com",
+  projectId: "uniquiz-d3ddb",
+  storageBucket: "uniquiz-d3ddb.firebasestorage.app",
+  messagingSenderId: "504888829506",
+  appId: "1:504888829506:web:4a569b26414e74113c6fdb"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = "uniquiz-live";
+
+await signInAnonymously(auth);
+
+/* =========================================================
+   GLOBAL STATE
+========================================================= */
+const state = {
+  user: null,
+  gameId: null,
+  streak: 0,
+  difficulty: 1,
+  questionIndex: 0,
+  answered: false,
+  unsubPlayers: null
+};
+
+/* =========================================================
+   QUESTIONS (WITH IMAGES & DIFFICULTY)
+========================================================= */
+const QUESTIONS = [
+  {
+    q: "Which planet is the largest?",
+    img: "https://upload.wikimedia.org/wikipedia/commons/e/e2/Jupiter.jpg",
+    options: ["Jupiter", "Mars", "Earth", "Venus"],
+    correct: 0,
+    difficulty: 1
+  },
+  {
+    q: "What is the derivative of x²?",
+    img: "",
+    options: ["x", "2x", "x²", "2"],
+    correct: 1,
+    difficulty: 2
+  },
+  {
+    q: "Solve: ∫ 2x dx",
+    img: "",
+    options: ["x² + C", "2x² + C", "x + C", "None"],
+    correct: 0,
+    difficulty: 3
+  }
+];
+
+/* =========================================================
+   AUTH (ADMIN + FACULTY)
+========================================================= */
+async function ensureAdmin() {
+  try {
+    return await signInWithEmailAndPassword(auth, "admin@uniquiz.local", "admin123");
+  } catch {
+    const c = await createUserWithEmailAndPassword(auth, "admin@uniquiz.local", "admin123");
+    await setDoc(doc(db, "global_users", c.user.uid), {
+      name: "System Admin",
+      role: "admin",
+      createdAt: Date.now()
+    });
+    return c;
+  }
+}
+
+window.attemptLogin = async () => {
+  try {
+    let cred;
+    if (loginUser.value === "admin") {
+      if (loginPass.value !== "admin123") throw "";
+      cred = await ensureAdmin();
+    } else {
+      cred = await signInWithEmailAndPassword(auth, loginUser.value, loginPass.value);
+    }
+
+    const snap = await getDoc(doc(db, "global_users", cred.user.uid));
+    state.user = { uid: cred.user.uid, ...snap.data() };
+    loginSuccess();
+  } catch {
+    loginError.classList.remove("hidden");
+  }
+};
+
+/* =========================================================
+   GAME CREATION
+========================================================= */
+window.initiateHostSession = async (title) => {
+  const pin = Math.floor(100000 + Math.random() * 900000).toString();
+  state.gameId = pin;
+
+  await setDoc(doc(db, "artifacts", appId, "public", "data", "games", pin), {
+    title,
+    status: "lobby",
+    createdAt: Date.now()
+  });
+
+  state.unsubPlayers = onSnapshot(
+    collection(db, "artifacts", appId, "public", "data", "games", pin, "players"),
+    snap => lobbyCount.textContent = snap.size
+  );
+
+  lobbyPinDisplay.textContent = pin;
+  hostLobbyScreen.classList.remove("hidden");
+};
+
+/* =========================================================
+   RENDER QUESTION (IMAGES SUPPORTED)
+========================================================= */
+function renderQuestion() {
+  state.answered = false;
+  const q = QUESTIONS
+    .filter(x => x.difficulty === state.difficulty)
+    [state.questionIndex % QUESTIONS.length];
+
+  questionText.textContent = q.q;
+
+  if (q.img) {
+    questionText.insertAdjacentHTML("afterend",
+      `<img src="${q.img}" class="max-h-48 mx-auto mb-6 rounded-xl shadow">`);
+  }
+}
+
+/* =========================================================
+   ANSWERS, STREAKS & ADAPTIVE DIFFICULTY
+========================================================= */
+window.submitAnswer = async (idx) => {
+  if (state.answered) return;
+  state.answered = true;
+
+  const q = QUESTIONS[state.questionIndex];
+  const correct = idx === q.correct;
+
+  if (correct) {
+    state.streak++;
+    state.difficulty = Math.min(3, state.difficulty + (state.streak % 3 === 0 ? 1 : 0));
+    confetti({ particleCount: 100 });
+  } else {
+    state.streak = 0;
+    state.difficulty = Math.max(1, state.difficulty - 1);
+  }
+
+  await updateDoc(
+    doc(db, "artifacts", appId, "public", "data", "games", state.gameId, "players", auth.currentUser.uid),
+    {
+      score: increment(correct ? 100 : 0),
+      streak: state.streak,
+      lastCorrect: correct
+    }
+  );
+
+  setTimeout(nextQuestion, 2000);
+};
+
+/* =========================================================
+   NEXT QUESTION
+========================================================= */
+function nextQuestion() {
+  state.questionIndex++;
+  if (state.questionIndex >= QUESTIONS.length) {
+    showAnalytics();
+  } else {
+    renderQuestion();
+  }
+}
+
+/* =========================================================
+   POST-QUIZ ANALYTICS
+========================================================= */
+async function showAnalytics() {
+  const snap = await getDoc(
+    doc(db, "artifacts", appId, "public", "data", "games", state.gameId)
+  );
+
+  alert("Quiz Complete! Analytics Ready.");
+}
+
+/* =========================================================
+   EXPORT RESULTS (CSV)
+========================================================= */
+window.exportResults = async () => {
+  const snap = await getDocs(
+    collection(db, "artifacts", appId, "public", "data", "games", state.gameId, "players")
+  );
+
+  let csv = "Name,Score,Streak\n";
+  snap.forEach(d => {
+    const p = d.data();
+    csv += `${p.name},${p.score},${p.streak}\n`;
+  });
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "quiz-results.csv";
+  a.click();
+};
+</script>
+
+
+  </body>
+</html>
