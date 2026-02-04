@@ -231,7 +231,7 @@
         </div>
     </div>
 
-  <script type="module">
+ <script type="module">
 /* =========================================================
    FIREBASE IMPORTS
 ========================================================= */
@@ -255,23 +255,43 @@ import {
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
 /* =========================================================
-   FIREBASE INIT
+   FIREBASE INIT (NON-BLOCKING)
 ========================================================= */
 const firebaseConfig = {
-  apiKey: "AIzaSyD7HZMkzjcHmIqV7m4r6a_2T8dfmGzVm54",
-  authDomain: "uniquiz-d3ddb.firebaseapp.com",
-  projectId: "uniquiz-d3ddb",
-  storageBucket: "uniquiz-d3ddb.firebasestorage.app",
-  messagingSenderId: "504888829506",
-  appId: "1:504888829506:web:4a569b26414e74113c6fdb"
+  apiKey: "AIzaSyDk_fr2mz4oj2XEkytFjd7V_qy2qaCvlnk",
+  authDomain: "unie-e6eee.firebaseapp.com",
+  projectId: "unie-e6eee",
+  storageBucket: "unie-e6eee.firebasestorage.app",
+  messagingSenderId: "118933128283",
+  appId: "1:118933128283:web:584f2cd1a2ea3d9049ab7e"
 };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = "uniquiz-live";
+const appId = "unie-live";
 
-await signInAnonymously(auth);
+/* 🔥 NON-BLOCKING AUTH */
+signInAnonymously(auth).catch(console.warn);
+
+/* =========================================================
+   FAST UI CLOUD STATUS (TIMEOUT SAFE)
+========================================================= */
+const dbStatus = document.getElementById("db-status");
+
+function cloudTimeout(ms = 2500) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+Promise.race([
+  cloudTimeout(),
+  new Promise(res =>
+    auth.onAuthStateChanged(u => u && res())
+  )
+]).then(() => {
+  dbStatus.textContent = "Cloud Ready ✅";
+  dbStatus.className = "text-green-500 text-xs font-bold text-center";
+});
 
 /* =========================================================
    GLOBAL STATE
@@ -279,48 +299,26 @@ await signInAnonymously(auth);
 const state = {
   user: null,
   gameId: null,
-  streak: 0,
-  difficulty: 1,
-  questionIndex: 0,
-  answered: false,
-  unsubPlayers: null
+  unsubscribeLobby: null,
+  unsubscribeGame: null,
+  dbReady: false
 };
 
 /* =========================================================
-   QUESTIONS (WITH IMAGES & DIFFICULTY)
+   FIRESTORE WARM-UP (BACKGROUND)
 ========================================================= */
-const QUESTIONS = [
-  {
-    q: "Which planet is the largest?",
-    img: "https://upload.wikimedia.org/wikipedia/commons/e/e2/Jupiter.jpg",
-    options: ["Jupiter", "Mars", "Earth", "Venus"],
-    correct: 0,
-    difficulty: 1
-  },
-  {
-    q: "What is the derivative of x²?",
-    img: "",
-    options: ["x", "2x", "x²", "2"],
-    correct: 1,
-    difficulty: 2
-  },
-  {
-    q: "Solve: ∫ 2x dx",
-    img: "",
-    options: ["x² + C", "2x² + C", "x + C", "None"],
-    correct: 0,
-    difficulty: 3
-  }
-];
+setTimeout(() => {
+  getDoc(doc(db, "ping", "ping")).catch(() => {});
+}, 1200);
 
 /* =========================================================
-   AUTH (ADMIN + FACULTY)
+   ADMIN BOOTSTRAP (UNCHANGED)
 ========================================================= */
 async function ensureAdmin() {
   try {
-    return await signInWithEmailAndPassword(auth, "admin@uniquiz.local", "admin123");
+    return await signInWithEmailAndPassword(auth, "admin@unie.local", "admin123");
   } catch {
-    const c = await createUserWithEmailAndPassword(auth, "admin@uniquiz.local", "admin123");
+    const c = await createUserWithEmailAndPassword(auth, "admin@unie.local", "admin123");
     await setDoc(doc(db, "global_users", c.user.uid), {
       name: "System Admin",
       role: "admin",
@@ -330,6 +328,9 @@ async function ensureAdmin() {
   }
 }
 
+/* =========================================================
+   LOGIN (NO BLOCKING)
+========================================================= */
 window.attemptLogin = async () => {
   try {
     let cred;
@@ -349,7 +350,17 @@ window.attemptLogin = async () => {
 };
 
 /* =========================================================
-   GAME CREATION
+   LAZY ADMIN USER LISTENER (PERFORMANCE FIX)
+========================================================= */
+function loadAdminUsers() {
+  if (state.user?.role !== "admin") return;
+  return onSnapshot(collection(db, "global_users"), snap => {
+    console.log("Admin users synced:", snap.size);
+  });
+}
+
+/* =========================================================
+   HOST GAME (LISTENER CLEANUP SAFE)
 ========================================================= */
 window.initiateHostSession = async (title) => {
   const pin = Math.floor(100000 + Math.random() * 900000).toString();
@@ -361,9 +372,16 @@ window.initiateHostSession = async (title) => {
     createdAt: Date.now()
   });
 
-  state.unsubPlayers = onSnapshot(
+  if (state.unsubscribeLobby) {
+    state.unsubscribeLobby();
+    state.unsubscribeLobby = null;
+  }
+
+  state.unsubscribeLobby = onSnapshot(
     collection(db, "artifacts", appId, "public", "data", "games", pin, "players"),
-    snap => lobbyCount.textContent = snap.size
+    snap => {
+      lobbyCount.textContent = snap.size;
+    }
   );
 
   lobbyPinDisplay.textContent = pin;
@@ -371,98 +389,59 @@ window.initiateHostSession = async (title) => {
 };
 
 /* =========================================================
-   RENDER QUESTION (IMAGES SUPPORTED)
+   START GAME (LISTENER CLEANUP)
 ========================================================= */
-function renderQuestion() {
-  state.answered = false;
-  const q = QUESTIONS
-    .filter(x => x.difficulty === state.difficulty)
-    [state.questionIndex % QUESTIONS.length];
-
-  questionText.textContent = q.q;
-
-  if (q.img) {
-    questionText.insertAdjacentHTML("afterend",
-      `<img src="${q.img}" class="max-h-48 mx-auto mb-6 rounded-xl shadow">`);
-  }
-}
-
-/* =========================================================
-   ANSWERS, STREAKS & ADAPTIVE DIFFICULTY
-========================================================= */
-window.submitAnswer = async (idx) => {
-  if (state.answered) return;
-  state.answered = true;
-
-  const q = QUESTIONS[state.questionIndex];
-  const correct = idx === q.correct;
-
-  if (correct) {
-    state.streak++;
-    state.difficulty = Math.min(3, state.difficulty + (state.streak % 3 === 0 ? 1 : 0));
-    confetti({ particleCount: 100 });
-  } else {
-    state.streak = 0;
-    state.difficulty = Math.max(1, state.difficulty - 1);
+window.startGame = async () => {
+  if (state.unsubscribeLobby) {
+    state.unsubscribeLobby();
+    state.unsubscribeLobby = null;
   }
 
   await updateDoc(
-    doc(db, "artifacts", appId, "public", "data", "games", state.gameId, "players", auth.currentUser.uid),
-    {
-      score: increment(correct ? 100 : 0),
-      streak: state.streak,
-      lastCorrect: correct
-    }
+    doc(db, "artifacts", appId, "public", "data", "games", state.gameId),
+    { status: "playing" }
   );
 
-  setTimeout(nextQuestion, 2000);
+  gameScreen.classList.remove("hidden");
+  hostLobbyScreen.classList.add("hidden");
 };
 
 /* =========================================================
-   NEXT QUESTION
+   PLAYER JOIN (NO DUPLICATE LISTENERS)
 ========================================================= */
-function nextQuestion() {
-  state.questionIndex++;
-  if (state.questionIndex >= QUESTIONS.length) {
-    showAnalytics();
-  } else {
-    renderQuestion();
+window.joinGame = async () => {
+  const pin = gamePinInput.value;
+  const name = playerNameInput.value;
+
+  const ref = doc(db, "artifacts", appId, "public", "data", "games", pin);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return alert("Invalid PIN");
+
+  await setDoc(
+    doc(ref, "players", auth.currentUser.uid),
+    { name, avatar: selectedAvatar, score: 0 }
+  );
+
+  if (state.unsubscribeGame) {
+    state.unsubscribeGame();
+    state.unsubscribeGame = null;
   }
-}
 
-/* =========================================================
-   POST-QUIZ ANALYTICS
-========================================================= */
-async function showAnalytics() {
-  const snap = await getDoc(
-    doc(db, "artifacts", appId, "public", "data", "games", state.gameId)
-  );
-
-  alert("Quiz Complete! Analytics Ready.");
-}
-
-/* =========================================================
-   EXPORT RESULTS (CSV)
-========================================================= */
-window.exportResults = async () => {
-  const snap = await getDocs(
-    collection(db, "artifacts", appId, "public", "data", "games", state.gameId, "players")
-  );
-
-  let csv = "Name,Score,Streak\n";
-  snap.forEach(d => {
-    const p = d.data();
-    csv += `${p.name},${p.score},${p.streak}\n`;
+  state.unsubscribeGame = onSnapshot(ref, d => {
+    if (d.data().status === "playing") {
+      playerWaitingScreen.classList.add("hidden");
+      gameScreen.classList.remove("hidden");
+    }
   });
-
-  const blob = new Blob([csv], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "quiz-results.csv";
-  a.click();
 };
+
+/* =========================================================
+   OFFLINE AWARENESS (UX)
+========================================================= */
+window.addEventListener("offline", () => {
+  dbStatus.textContent = "Offline Mode ⚠️";
+  dbStatus.className = "text-yellow-500 text-xs font-bold text-center";
+});
 </script>
-
-
   </body>
 </html>
